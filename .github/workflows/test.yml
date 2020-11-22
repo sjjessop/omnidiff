@@ -1,0 +1,45 @@
+name: tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: [3.7, 3.8, 3.9]
+      fail-fast: false
+    env:
+      OS: ${{ matrix.os }}
+      PYTHON: ${{ matrix.python }}
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install code and dev dependencies
+        run: |
+          pip install -e .[dev]
+          pip freeze
+
+      - name: Lint
+        run: |
+          isort . -m VERTICAL_GRID_GROUPED --fss --tc --lai=1 --check-only --ignore-whitespace
+          flake8 --show-source --ignore=E226,E301,E302,E305,E306,E501,W503,W504
+          mypy -p omnidiff
+
+      - name: Test
+        run: pytest --cov=omnidiff --cov-branch --cov-report=xml --cov-report=term
+
+      - name: Build wheel
+        run: python setup.py bdist_wheel
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v1
+        with:
+          file: ./coverage.xml
+          env_vars: OS,PYTHON
