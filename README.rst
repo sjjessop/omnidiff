@@ -6,6 +6,22 @@ A Python library for managing collections of files.
 
 This library is work in progress, and may not be usable prior to release 1.0.
 
+.. image:: https://github.com/sjjessop/omnidiff/workflows/tests/badge.svg
+   :alt: Test status
+   :target: https://github.com/sjjessop/omnidiff/actions?query=workflow%3Atests
+
+.. image:: https://codecov.io/gh/sjjessop/omnidiff/branch/develop/graph/badge.svg
+   :alt: codecov
+   :target: https://codecov.io/gh/sjjessop/omnidiff
+
+.. image:: https://img.shields.io/badge/python-3.7%20%7C%203.8%20%7C%203.9-blue.svg
+   :alt: Python versions 3.7 3.8 3.9
+   :target: https://www.python.org/downloads/
+
+.. image:: https://img.shields.io/badge/badges-4-green.svg
+   :alt: 4 badges
+   :target: https://shields.io/
+
 Purpose
 =======
 
