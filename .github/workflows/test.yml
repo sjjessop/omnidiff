@@ -33,7 +33,7 @@ jobs:
           mypy -p omnidiff
 
       - name: Test
-        run: pytest --cov=omnidiff --cov-branch --cov-report=xml --cov-report=term
+        run: pytest -m"not inaccessible" --cov=omnidiff --cov-branch --cov-report=xml --cov-report=term
 
       - name: Build wheel
         run: python setup.py bdist_wheel

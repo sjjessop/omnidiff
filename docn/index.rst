@@ -8,6 +8,7 @@
    :caption: Contents:
 
    channel
+   file
 
 * :ref:`genindex`
 * :ref:`modindex`
