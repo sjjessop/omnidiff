@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta, timezone
 import hashlib
 import itertools
+import json
 import os
 from pathlib import Path
 import time
@@ -9,7 +10,7 @@ import time
 import pytest
 from tqdm import tqdm
 
-from omnidiff.dirs import DirInfo, DummyBar, FileInfo
+from omnidiff.dirs import DirInfo, DummyBar, Encoder, FileInfo
 from omnidiff.file import FileStats
 
 def tempfiles(tmpdir, file_size=1):
@@ -47,7 +48,7 @@ def test_dir_info(tmp_path):
     dirinfo.populate()
     check_everything(file_size, subdir, files, dupe_groups, dirinfo)
 
-def check_everything(file_size, subdir, files, dupes, info, no_empty=False, fast=False):
+def check_everything(file_size, subdir, files, dupes, info, no_empty=False, fast=False, is_copy=False):
     def skip_hash(duplicated_sizes, actual_size):
         # Optionally some files aren't hashed.
         return (
@@ -75,6 +76,10 @@ def check_everything(file_size, subdir, files, dupes, info, no_empty=False, fast
         for group in dupe_groups
     )
     assert sets == dupes
+    if not is_copy:
+        info.save()
+        clone = DirInfo.load(subdir)
+        check_everything(file_size, subdir, files, dupes, clone, no_empty, fast, is_copy=True)
 
 @pytest.mark.parametrize('no_empty, fast', itertools.product([False, True], repeat=2))
 def test_dir_info_optimisation(tmp_path, no_empty, fast):
@@ -154,3 +159,43 @@ def test_fileinfo(tmp_path):
             assert new_info.when == datetime(2000, 1, 1)
     assert with_hash
     assert without_hash
+
+def test_serialisation(tmp_path):
+    """
+    Test failure modes. Success is tested in check_everything.
+    """
+    subdir = (tmp_path / 'sub')
+    jsonfile = (tmp_path / 'sub.dirinfo.json')
+    (subdir / 'dir').mkdir(parents=True)
+    dirinfo = DirInfo(subdir)
+    dirinfo.save()
+    # Not exactly a requirement, but for the tests to work we need this.
+    assert jsonfile.exists()
+    # If this fails, then testing that the bad cases fail is kind of pointless.
+    assert DirInfo.load(subdir).base == os.fspath(subdir)
+    # Make sure the encoder isn't accidentally used for something it can't handle.
+    with pytest.raises(TypeError):
+        json.dumps(object(), cls=Encoder)
+
+    # Make sure bad json file contents are rejected
+    def bad_jsonfile(jsondata):
+        with open(jsonfile, 'w', encoding='utf8') as outfile:
+            json.dump(jsondata, outfile)
+        with pytest.raises(ValueError):
+            DirInfo.load(subdir)
+    bad_jsonfile({'foo': 'bar'})
+    bad_jsonfile(None)
+
+    # If the serialised base doesn't match the actual location, then something
+    # is wrong and we should refuse to load it.
+    dirinfo.save()
+    with open(jsonfile, 'r', encoding='utf8') as infile:
+        jsondata = json.load(infile)
+    jsondata['base'] += 'X'
+    bad_jsonfile(jsondata)
+
+    # If there's no data then load() fails, but cached() succeeds.
+    jsonfile.unlink()
+    with pytest.raises(FileNotFoundError):
+        DirInfo.load(subdir)
+    assert DirInfo.cached(subdir).base == subdir

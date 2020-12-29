@@ -1,14 +1,19 @@
 
 from __future__ import annotations
 
+import binascii
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import json
 import os
 import pathlib
-from typing import Callable, Dict, FrozenSet, Iterable, Iterator, Optional, Set
+from typing import (
+    Any, Callable, Dict, FrozenSet, Iterable, Iterator, Optional, Set,
+)
 
 from omnidiff import channel, file
+from omnidiff.file import PathLike
 
 @dataclass(frozen=True, order=True)
 class FileInfo(file.FileStats):
@@ -37,9 +42,9 @@ class DirInfo:
     Object representing the location and contents of a directory. Call
     :func:`populate` to scan the contents.
 
-    :param base_str: The directory location.
+    :param base: The directory location.
     """
-    base_str: str
+    base: PathLike
     # All files found, indexed by relative path. This contains either a
     # FileStats or a FileInfo object, according to whether we have hashed the
     # file (yet).
@@ -139,7 +144,7 @@ class DirInfo:
             for wrapper in reversed(wrappers):
                 if wrapper is not None:
                     filtered = wrapper(filtered)
-            file.recurse_filestats(self.base_str, channel=filtered)
+            file.recurse_filestats(self.base, channel=filtered)
             if progress is None:
                 progress = DummyBar
             with progress(responses, desc='Hashing files', total=to_hash) as bar:
@@ -155,7 +160,7 @@ class DirInfo:
         self._files_by_hash[stats.size][stats.hash].add(stats)
         return stats
     def _record_hash(self, path: pathlib.Path, hash: bytes, when: datetime = None):
-        relative = os.fspath(path.relative_to(self.base_str))
+        relative = os.fspath(path.relative_to(self.base))
         old_stats = self._files_by_rel_str[relative]
         # TODO: maybe could intern the hash to save memory?
         new_stats = FileInfo.add_hash(old_stats, hash=hash, when=when)
@@ -187,6 +192,45 @@ class DirInfo:
             for hashgroup in sizegroup.values():
                 if len(hashgroup) > 1:
                     yield frozenset(hashgroup)
+    def save(self) -> None:
+        """
+        Serialise the directory info. The data is stored alongside the
+        directory, in a file named after the directory with '.dirinfo.json'
+        appended.
+
+        The absolute path of the directory is stored in the JSON, for safety,
+        so if you later move the directory with its JSON file, then you may
+        need to edit the JSON file (or just delete and rebuild it). An option
+        or tool to relocate dirinfo files may be provided in future.
+        """
+        filename = os.fspath(self.base) + '.dirinfo.json'
+        with open(filename, 'w', encoding='utf8') as outfile:
+            json.dump(self, outfile, cls=Encoder, indent=1, ensure_ascii=False, sort_keys=True)
+    @classmethod
+    def load(cls, dir: PathLike) -> DirInfo:
+        """
+        Load serialised info for the specified directory.
+
+        :raises: :obj:`FileNotFoundError` if dirinfo not present.
+        """
+        filename = os.fspath(dir) + '.dirinfo.json'
+        with open(filename, 'r', encoding='utf8') as infile:
+            result = json.load(infile, object_hook=Encoder.object_hook)
+            if not isinstance(result, cls):
+                raise ValueError(f'Content of {dir!r} is wrong format')
+            if os.fspath(result.base) != os.path.abspath(dir):
+                raise ValueError(f'Base dir does not match: got {result.base!r}, expected {dir!r}')
+            return result
+    @classmethod
+    def cached(cls, dir: PathLike) -> DirInfo:
+        """
+        Create a DirInfo object for the specified directory, using cached data
+        if present or a brand new object if not.
+        """
+        try:
+            return cls.load(dir)
+        except FileNotFoundError:
+            return cls(dir)
 
 class DummyBar(object):
     """
@@ -211,3 +255,63 @@ class DummyBar(object):
         return
     def close(self) -> None:
         return
+
+class Encoder(json.JSONEncoder):
+    """
+    Class for encoding and decoding DirInfo objects as JSON.
+
+    To save duplication, the shared base_str from each FileStats object is
+    stored only once, and we handle serialising the other fields.
+    """
+    def default(self, o: Any) -> Any:
+        """
+        Encode object to a jsonable dictionary.
+        """
+        if isinstance(o, FileInfo):
+            return {
+                '_rel_str': o._rel_str,
+                'size': o.size,
+                'hash': binascii.hexlify(o.hash).decode('ascii'),
+                'when': o.when.isoformat(),
+            }
+        if isinstance(o, file.FileStats):
+            return {
+                '_rel_str': o._rel_str,
+                'size': o.size,
+            }
+        if isinstance(o, DirInfo):
+            return {
+                'base': os.path.abspath(o.base),
+                'files': list(o._files_by_rel_str.values()),
+            }
+        return super().default(o)
+    @staticmethod
+    def object_hook(values: Dict[str, Any]) -> Any:
+        """
+        Modify dictionary for object. Reverse of :func:`default`.
+        """
+        if '_rel_str' in values:
+            # Then we have a file object (either FilesStats or FileInfo).
+            # We will convert it to an object later, once we have the base dir.
+            # For now, just prepare the parameters.
+            if 'hash' in values:
+                values['hash'] = binascii.unhexlify(values['hash'].encode('ascii'))
+                values['when'] = datetime.fromisoformat(values['when'])
+            return values
+        if 'base' in values:
+            # Then we have a DirInfo object
+            record = DirInfo(values['base'])
+            for filestats in Encoder._iter_files(values['files'], record.base):
+                record._store_file(filestats)
+                if isinstance(filestats, FileInfo):
+                    record._store_hash(filestats)
+            return record
+        # We don't accept any other objects or dictionaries.
+        raise ValueError(repr(values)[0:100])
+    @staticmethod
+    def _iter_files(files_json, base_str) -> Iterable[file.FileStats]:
+        for file_json in files_json:
+            stats = file.FileStats(base_str, file_json['_rel_str'], file_json['size'])
+            if 'hash' in file_json:
+                stats = FileInfo.add_hash(stats, file_json['hash'], file_json['when'])
+            yield stats
