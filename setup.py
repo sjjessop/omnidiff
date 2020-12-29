@@ -8,6 +8,7 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     install_requires=[
         'pytest',
+        'tqdm',
     ],
     extras_require={
         'dev': [

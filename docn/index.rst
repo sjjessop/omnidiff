@@ -9,6 +9,7 @@
 
    channel
    file
+   dirs
 
 * :ref:`genindex`
 * :ref:`modindex`
