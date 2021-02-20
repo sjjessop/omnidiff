@@ -198,7 +198,7 @@ def test_serialisation(tmp_path):
     jsonfile = (tmp_path / 'sub.dirinfo.json')
     (subdir / 'dir').mkdir(parents=True)
     dirinfo = DirInfo(subdir)
-    dirinfo.save()
+    assert dirinfo.save() == os.fspath(jsonfile)
     # Not exactly a requirement, but for the tests to work we need this.
     assert jsonfile.exists()
     # If this fails, then testing that the bad cases fail is kind of pointless.
@@ -218,7 +218,7 @@ def test_serialisation(tmp_path):
 
     # If the serialised base doesn't match the actual location, then something
     # is wrong and we should refuse to load it.
-    dirinfo.save()
+    assert dirinfo.save() == os.fspath(jsonfile)
     with open(jsonfile, 'r', encoding='utf8') as infile:
         jsondata = json.load(infile)
     jsondata['base'] += 'X'

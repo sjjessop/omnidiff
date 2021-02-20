@@ -227,7 +227,7 @@ class DirInfo:
             for hashgroup in sizegroup.values():
                 if len(hashgroup) > 1:
                     yield frozenset(hashgroup)
-    def save(self) -> None:
+    def save(self) -> str:
         """
         Serialise the directory info. The data is stored alongside the
         directory, in a file named after the directory with '.dirinfo.json'
@@ -241,6 +241,7 @@ class DirInfo:
         filename = os.fspath(self.base) + '.dirinfo.json'
         with open(filename, 'w', encoding='utf8') as outfile:
             json.dump(self, outfile, cls=Encoder, indent=1, ensure_ascii=False, sort_keys=True)
+        return filename
     @classmethod
     def load(cls, dir: PathLike) -> DirInfo:
         """
