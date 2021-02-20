@@ -93,6 +93,36 @@ def test_dir_info_optimisation(tmp_path, no_empty, fast):
     dirinfo.populate(no_empty=no_empty, fast=fast)
     check_everything(file_size, subdir, files, dupe_groups, dirinfo, no_empty, fast)
 
+def test_resume(tmp_path):
+    """
+    The 'resume' option to populate() avoids re-calculating hashes.
+    """
+    file_size = 123
+    subdir, files, dupe_groups = tempfiles(tmp_path, file_size)
+    empty_files = set(file for file, content in files.items() if len(content) == 0)
+    assert 0 < len(empty_files) < len(files)
+    non_empty_files = set(files) - empty_files
+    dirinfo = DirInfo(subdir)
+    dirinfo.populate(no_empty=True)
+    # Remember the results
+    first_results = {file: dirinfo.get_relative(file) for file in files}
+    # Resume populating, with different params to include the empty file
+    dirinfo.populate(resume=True)
+    for file in empty_files:
+        assert dirinfo.get_relative(file) is not first_results[file], file
+    for file in non_empty_files:
+        assert dirinfo.get_relative(file) is first_results[file], file
+    # Now delete a file, and make sure it disappears. Cover the cases where
+    # the deleted file has and hasn't been hashed.
+    missing_files = ('big', 'unequal')
+    dirinfo.populate(no_empty=True, fast=True)
+    for filename in missing_files:
+        (subdir / filename).unlink()
+    dirinfo.populate(resume=True, fast=True)
+    for filename in missing_files:
+        with pytest.raises(KeyError):
+            dirinfo.get_relative(filename), filename
+
 progress_tests = itertools.product([False, True], [False, True], [tqdm, DummyBar])
 
 @pytest.mark.parametrize('no_empty, fast, progress', progress_tests)

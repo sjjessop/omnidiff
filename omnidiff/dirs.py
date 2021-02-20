@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import binascii
 from collections import defaultdict
+import contextlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import json
@@ -59,6 +60,7 @@ class DirInfo:
         *,
         no_empty: bool = False,
         fast: bool = False,
+        resume: bool = False,
         threads: int = 1,
         progress: Callable = None,
     ) -> None:
@@ -71,6 +73,8 @@ class DirInfo:
         :param fast: Only hash files if their size matches that of at least one
           other file somewhere under this directory. This is enough hashes to
           detect any duplicate files contained under the directory.
+        :param resume: Re-use any existing results (default is to restart from
+          scratch).
         :param threads: Number of threads to use for hashing.
         :param progress: Factory to create a progress bar. This is designed to
           be compatible with `tqdm.tqdm <https://tqdm.github.io/>`_, but you
@@ -78,14 +82,29 @@ class DirInfo:
           is a minimal implementation of the required interface, so if you want
           to write your own then start with the `DummyBar` source.
         """
-        # Start from scratch.
-        self._files_by_rel_str.clear()
-        self._files_by_hash.clear()
+        if not resume:
+            # Start from scratch.
+            self._files_by_rel_str.clear()
+            self._files_by_hash.clear()
         to_hash = 0
+        # This set is populated by existing_hash(), which is only called if
+        # resume is True, because it's only needed if resume is True but it
+        # could get quite large.
+        seen = set()
 
+        def existing_hash(fstats: file.FileStats) -> bool:
+            seen.add(fstats._rel_str)
+            with contextlib.suppress(KeyError):
+                oldstats = self.get_relative(fstats._rel_str)
+                if oldstats.size == fstats.size and hasattr(oldstats, 'hash'):
+                    return True
+            return False
         class Store(channel.WrappedChannel):
             def put(inner_self, fstats: file.FileStats) -> None:
-                self._store_file(fstats)
+                if not resume or not existing_hash(fstats):
+                    self._store_file(fstats)
+                # Pass on even if we didn't store, because the SizeFilter needs
+                # to see it, and it's nice to include it in the progress too.
                 super().put(fstats)
         class Progress(channel.WrappedChannel):
             def __init__(inner_self, other):
@@ -95,7 +114,7 @@ class DirInfo:
                 inner_self.bar.set_description_str(desc='Found files')
                 inner_self.bar.close()
             def put(inner_self, fstats: file.FileStats) -> None:
-                inner_self.other.put(fstats)
+                super().put(fstats)
                 inner_self.bar.update(1)
         class SkipEmpty(channel.WrappedChannel):
             def put(inner_self, fstats: file.FileStats) -> None:
@@ -126,6 +145,13 @@ class DirInfo:
                     super().put(fstats)
                     # 2 or more files is all the same to us.
                     inner_self.size_groups[fstats.size] = inner_self.many
+        class SkipExisting(channel.WrappedChannel):
+            def put(inner_self, fstats: file.FileStats) -> None:
+                if existing_hash(fstats):
+                    # We already hashed it
+                    super().check()
+                else:
+                    super().put(fstats)
         class Filename(channel.WrappedChannel):
             def put(inner_self, fstats: file.FileStats) -> None:
                 nonlocal to_hash
@@ -136,6 +162,7 @@ class DirInfo:
             Progress if progress is not None else None,
             SkipEmpty if no_empty else None,
             SizeFilter if fast else None,
+            SkipExisting if resume else None,
             Filename,
         ]
         requests, responses = file.hasher(threads)
@@ -152,6 +179,14 @@ class DirInfo:
                     self._record_hash(path, hash)
                     # Update the count, since we're concurrently finding files.
                     bar.total = to_hash
+        if resume:
+            # We might still have records hanging around for files that no
+            # longer exist. It's important we compute the set of them before we
+            # start modifying the dictionary.
+            for filename in (self._files_by_rel_str.keys() - seen):
+                stats = self._files_by_rel_str.pop(filename)
+                if isinstance(stats, FileInfo):
+                    self._files_by_hash[stats.size][stats.hash].remove(stats)
     def _store_file(self, stats: file.FileStats) -> None:
         # We use a private attribute of FileStats here in order to save memory
         # by sharing the same string instance.
