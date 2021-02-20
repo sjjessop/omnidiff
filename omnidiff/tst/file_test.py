@@ -175,7 +175,7 @@ def test_threading(func=file.recurse_filestats):
         while filecount == 0:
             time.sleep(delta)
             filecount = chnl.queue.qsize()
-        for _ in range(10):
+        for _ in range(100):
             if chnl.queue.qsize() > filecount:
                 # Passed -- data is being written to the channel even
                 # though we aren't calling any functions on it.
