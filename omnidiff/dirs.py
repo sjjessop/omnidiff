@@ -207,6 +207,8 @@ class DirInfo:
         The number of files found.
         """
         return len(self._files_by_rel_str)
+    def __iter__(self) -> Iterator[file.FileStats]:
+        return iter(self._files_by_rel_str.values())
     def get_relative(self, rel: str) -> file.FileStats:
         """
         Return what we know about the specified file.

@@ -68,6 +68,7 @@ def check_everything(file_size, subdir, files, dupes, info, no_empty=False, fast
             assert record.hash == hashlib.sha256(content).digest()
             # 10 seconds is arbitrary, but it *shouldn't* be that slow.
             assert record.when >= datetime.now(tz=timezone.utc) - timedelta(seconds=10)
+    assert sorted(files.keys()) == sorted(file._rel_str for file in info)
     # Must notice that two files have the same hash
     dupe_groups = tuple(info.dupe_groups())
     assert len(dupe_groups) == len(dupes)
