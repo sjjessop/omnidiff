@@ -9,7 +9,14 @@ from tqdm import tqdm
 
 from omnidiff.dirs import DirInfo
 
-@click.group()
+# See source of click.core.Group. All we do is not sort before returning, so
+# that the commands in the --help text appear in the order defined, instead of
+# alphabetical order.
+class OrderedGroup(click.Group):
+    def list_commands(self, ctx):
+        return list(self.commands)
+
+@click.group(cls=OrderedGroup)
 @click.version_option()
 def main():
     pass
