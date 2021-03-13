@@ -6,7 +6,11 @@ setuptools.setup(
     version='0.0.1',
     python_requires='>=3.7.3',
     packages=setuptools.find_packages(),
+    entry_points={
+        'console_scripts': ['omnidiff=omnidiff.command_line:main'],
+    },
     install_requires=[
+        'click>=7.1.2',
         'pytest',
         'tqdm',
     ],
