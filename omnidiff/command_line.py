@@ -7,7 +7,7 @@ from typing import Callable
 import click
 from tqdm import tqdm
 
-from omnidiff.dirs import DirInfo
+from omnidiff.dirs import DirInfo, FileInfo
 
 # See source of click.core.Group. All we do is not sort before returning, so
 # that the commands in the --help text appear in the order defined, instead of
@@ -19,7 +19,19 @@ class OrderedGroup(click.Group):
 @click.group(cls=OrderedGroup)
 @click.version_option()
 def main():
-    pass
+    """
+    Compare groups of files or check them for duplicates.
+
+    Typical usage is to start by running 'info', to generate a json file which
+    records files below that directory and their hashes. This is stored as a
+    file named <directory>.dirinfo.json, alongside <directory> in its parent
+    directory.
+
+    Then use other commands to explore dupes within the directory, or to
+    compare two directories. By default, commands other than 'info' do not
+    rescan the directories, they just compare the stored data from the previous
+    run.
+    """
 
 def plural(count: int, singular: str, multiple: str = None):
     if count == 1:
@@ -110,6 +122,71 @@ def dupes(dirinfo: DirInfo) -> None:
         print(f'{len(group)} duplicates with size {example.size}, hash {hashcode}')
         for name in sorted(str(file.relpath) for file in group):
             print(f'  {name}')
+
+def list_option(name: str):
+    return click.option(
+        f'--list-{name}/--no-list-{name}', default=False,
+        help=f'List {name} file names (default False).',
+    )
+
+@main.command()
+@click.argument('old_dirname')
+@click.argument('new_dirname')
+@list_option('identical')
+@list_option('changed')
+@list_option('vanished')
+@list_option('added')
+@list_option('all')
+def compare(old_dirname: str, new_dirname: str, list_identical: bool, list_changed: bool, list_vanished: bool, list_added: bool, list_all: bool) -> None:
+    """
+    Summarise changes from OLD_DIRNAME to NEW_DIRNAME. Both directories must
+    previously have been scanned (by the 'info' command or otherwise).
+
+    The names OLD and NEW assume that you're comparing two snapshots of "the
+    same" collection of files, for example two backups on different dates.
+    """
+    identical = set()
+    changed = set()
+    vanished = set()
+    old_dir = DirInfo.load(old_dirname)
+    new_dir = DirInfo.load(new_dirname)
+    for old_file in old_dir:
+        rel_str = old_file._rel_str
+        try:
+            new_file = new_dir.get_relative(rel_str)
+        except KeyError:
+            vanished.add(rel_str)
+            continue
+        if not isinstance(old_file, FileInfo):
+            raise Exception(f'No hash for {old_file.fullpath}')
+        if not isinstance(new_file, FileInfo):
+            raise Exception(f'No hash for {new_file.fullpath}')
+        if new_file.hash == old_file.hash:
+            identical.add(rel_str)
+        else:
+            changed.add(rel_str)
+    added = (
+        {file._rel_str for file in new_dir}
+        .difference(file._rel_str for file in old_dir)
+    )
+    print('old:', old_dir.file_count)
+    print('new:', new_dir.file_count)
+    print('identical:', len(identical))
+    print('changed: ', len(changed))
+    print('vanished:', len(vanished))
+    print('added:', len(added))
+    if list_identical or list_all:
+        print('\nidentical files:\n  ', end='')
+        print('\n  '.join(sorted(identical)))
+    if list_changed or list_all:
+        print('\nchanged files:\n  ', end='')
+        print('\n  '.join(sorted(changed)))
+    if list_vanished or list_all:
+        print('\nvanished files:\n  ', end='')
+        print('\n  '.join(sorted(vanished)))
+    if list_added or list_all:
+        print('\nadded files:\n  ', end='')
+        print('\n  '.join(sorted(added)))
 
 if __name__ == '__main__':
     main()

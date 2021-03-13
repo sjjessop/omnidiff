@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 import omnidiff
 from omnidiff.command_line import main, plural
-from omnidiff.dirs import FileInfo
+from omnidiff.dirs import DirInfo, FileInfo
 from omnidiff.file import FileStats
 
 def info_options(**kwargs):
@@ -265,3 +265,104 @@ def test_dupes_no_resume(mock_DirInfo):
         **dupes_options(resume=False)
     )
     mock_DirInfo.return_value.dupe_groups.assert_called()
+
+@patch('sys.argv', ['omnidiff', 'compare', 'a', 'b'])
+@patch('omnidiff.command_line.DirInfo')
+def test_compare(mock_DirInfo):
+    """
+    Comparing to directories loads stored data for both.
+    """
+    with pytest.raises(SystemExit, match='0'):
+        main()
+    assert mock_DirInfo.load.call_count == 2
+    mock_DirInfo.load.assert_any_call('a')
+    mock_DirInfo.load.assert_any_call('b')
+
+def test_compare_counts(tmp_path, capsys):
+    """
+    "omnidiff compare" counts files in various states.
+    """
+    # We could do some complicated mocks with DirInfo, but it's easier just to
+    # create the files we want.
+    def set_up(path, extra_files=()):
+        path.mkdir()
+        (path / 'equal1.txt').write_bytes(b'equal1')
+        (path / 'equal2.txt').write_bytes(b'equal2')
+        (path / 'unequal.txt').write_bytes(str(path).encode('utf8'))
+        for extra in extra_files:
+            (path / extra).write_bytes(b'extra')
+        info = DirInfo(path)
+        info.populate()
+        info.save()
+        return path
+    old_dir = set_up(tmp_path / 'old', ['a', 'b'])
+    new_dir = set_up(tmp_path / 'new', ['c'])
+    with patch('sys.argv', ['omnidiff', 'compare', str(old_dir), str(new_dir)]):
+        with pytest.raises(SystemExit, match='0'):
+            main()
+    out = capsys.readouterr()[0]
+    results = {}
+    for row in out.splitlines():
+        key, _, value = row.partition(':')
+        results[key] = int(value)
+    assert results == {'old': 5, 'new': 4, 'identical': 2, 'changed': 1, 'vanished': 2, 'added': 1}
+
+def test_compare_no_hash(tmp_path):
+    """
+    "omnidiff compare" fails cleanly when hashes are missing.
+    """
+    # TODO - this behaviour may well change in future, in which case we can
+    # test the new behaviour instead.
+    def set_up(path, fast=False):
+        path.mkdir()
+        (path / 'dupe1.txt').write_bytes(b'equal')
+        (path / 'dupe2.txt').write_bytes(b'equal')
+        (path / 'unequal.txt').write_bytes(str(path).encode('utf8'))
+        info = DirInfo(path)
+        info.populate(fast=fast)
+        info.save()
+        return path
+    # Missing hash on the old side
+    old_dir = set_up(tmp_path / 'old', fast=True)
+    new_dir = set_up(tmp_path / 'new')
+    with patch('sys.argv', ['omnidiff', 'compare', str(old_dir), str(new_dir)]):
+        with pytest.raises(Exception, match='hash.*old'):
+            main()
+    # Missing hash on the new side
+    old_dir = set_up(tmp_path / 'old2')
+    new_dir = set_up(tmp_path / 'new2', fast=True)
+    with patch('sys.argv', ['omnidiff', 'compare', str(old_dir), str(new_dir)]):
+        with pytest.raises(Exception, match='hash.*new2'):
+            main()
+
+def test_compare_lists(tmp_path, capsys):
+    # Same setup as test_compare_counts. Could make it a fixture?
+    def set_up(path, extra_files=()):
+        path.mkdir()
+        (path / 'equal1.txt').write_bytes(b'equal1')
+        (path / 'equal2.txt').write_bytes(b'equal2')
+        (path / 'unequal.txt').write_bytes(str(path).encode('utf8'))
+        for extra in extra_files:
+            (path / extra).write_bytes(b'extra')
+        info = DirInfo(path)
+        info.populate()
+        info.save()
+        return path
+    old_dir = set_up(tmp_path / 'old', ['a', 'b'])
+    new_dir = set_up(tmp_path / 'new', ['c'])
+    with patch('sys.argv', ['omnidiff', 'compare', str(old_dir), str(new_dir), '--list-identical', '--list-changed', '--list-vanished', '--list-added']):
+        with pytest.raises(SystemExit, match='0'):
+            main()
+    out = capsys.readouterr()[0]
+    assert '\nidentical files:\n  equal1.txt\n  equal2.txt\n' in out
+    assert '\nchanged files:\n  unequal.txt\n' in out
+    assert '\nvanished files:\n  a\n  b\n' in out
+    assert '\nadded files:\n  c\n' in out
+    with patch('sys.argv', ['omnidiff', 'compare', str(old_dir), str(new_dir), '--list-all']):
+        with pytest.raises(SystemExit, match='0'):
+            main()
+    out = capsys.readouterr()[0]
+    assert '\nidentical files:\n  equal1.txt\n  equal2.txt\n' in out
+    assert '\nchanged files:\n  unequal.txt\n' in out
+    assert '\nvanished files:\n  a\n  b\n' in out
+    assert '\nadded files:\n  c\n' in out

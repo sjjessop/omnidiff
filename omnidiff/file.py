@@ -131,7 +131,7 @@ class FileStats(object):
     @property
     def relpath(self) -> Path:
         """
-        The relative path from the base direcotry to the file, as a
+        The relative path from the base directory to the file, as a
         :obj:`~pathlib.Path`.
         """
         return Path(self._rel_str)
