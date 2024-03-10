@@ -47,7 +47,7 @@ def dupes_options(**kwargs):
     [2, 'box', 'boxes', '2 boxes'],
 ])
 def test_plural(count, singular, multiple, expected):
-    assert(plural(count, singular, multiple) == expected)
+    assert plural(count, singular, multiple) == expected
 
 # I'm not too interested in testing that every possible set of command-line
 # options "really work", since it most cases they're the same as the function
