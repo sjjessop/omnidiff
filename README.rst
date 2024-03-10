@@ -63,10 +63,10 @@ major or minor releases.
 Compatibility
 =============
 
-Omnidice does not work with Python versions 3.6 or lower, because it uses
+Omnidiff does not work with Python versions 3.6 or lower, because it uses
 the ``from __future__ import annotations`` feature new in Python 3.7.
 
 Changelog
 =========
 
-Changes will not be logger prior to release 1.0
+Changes will not be logged prior to release 1.0
