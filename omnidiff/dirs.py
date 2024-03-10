@@ -257,7 +257,7 @@ class DirInfo:
             if not isinstance(result, cls):
                 raise ValueError(f'Content of {dir!r} is wrong format')
             if os.fspath(result.base) != os.path.abspath(dir):
-                raise ValueError(f'Base dir does not match: got {result.base!r}, expected {dir!r}')
+                raise ValueError(f'Base dir does not match: got {result.base!r}, expected {os.path.abspath(dir)!r}')
             return result
     @classmethod
     def cached(cls, dir: PathLike) -> DirInfo:
