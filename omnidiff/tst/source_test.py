@@ -11,8 +11,6 @@ def check_file(filename):
 def check_dir(dirname):
     if dirname.startswith('.'):
         return False
-    if dirname.endswith('.egg-info'):
-        return False
     return dirname != 'htmlcov'
 
 def test_linebreaks():
@@ -25,14 +23,14 @@ def test_linebreaks():
 
 def test_version_numbers():
     """Version numbers in different places must be consistent."""
-    with open('setup.py') as infile:
-        setup_pattern = r"^\s*version='([^']*)',?$"
-        setup = re.search(setup_pattern, infile.read(), re.MULTILINE).group(1)
+    with open('pyproject.toml') as infile:
+        pyproject_pattern = r'^\s*version\s*=\s*"([^"]*)",?$'
+        pyproject = re.search(pyproject_pattern, infile.read(), re.MULTILINE).group(1)
     with open('omnidiff/__init__.py') as infile:
         init_pattern = "^__version__ = '([^']*)'$"
         init = re.search(init_pattern, infile.read(), re.MULTILINE).group(1)
-    assert init == setup
+    assert init == pyproject
     with open('docn/conf.py') as infile:
         docn_pattern = "^release = '([^']*)'$"
         docn = re.search(docn_pattern, infile.read(), re.MULTILINE).group(1)
-    assert docn == setup
+    assert docn == pyproject
