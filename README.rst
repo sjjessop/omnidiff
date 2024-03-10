@@ -25,8 +25,8 @@ This library is work in progress, and may not be usable prior to release 1.0.
 Purpose
 =======
 
-Note that this is not a file diff program. It does not compare two files and
-tell you which lines have changed.
+This is not a file diff program. It does not compare two files and tell you
+which lines have changed.
 
 The main use case is checking and reconciling different copies of a large-ish
 collection of files. Say for example you have your music collection on two
