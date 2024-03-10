@@ -14,10 +14,10 @@ jobs:
       OS: ${{ matrix.os }}
       PYTHON: ${{ matrix.python }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Setup Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
 
@@ -39,7 +39,8 @@ jobs:
         run: python setup.py bdist_wheel
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v1
+        uses: codecov/codecov-action@v4
         with:
           file: ./coverage.xml
           env_vars: OS,PYTHON
+          token: ${{ secrets.CODECOV_TOKEN }}
