@@ -55,6 +55,10 @@ class DirInfo:
     _files_by_hash: Dict[Optional[int], Dict[bytes, Set[FileInfo]]] = field(
         default_factory=lambda: defaultdict(lambda: defaultdict(set))
     )
+    # All file hashed, indexed by the file name (final part of the path)
+    _files_by_name: Dict[str, Set[FileInfo]] = field(
+        default_factory=lambda: defaultdict(set)
+    )
     def populate(
         self,
         *,
@@ -86,6 +90,7 @@ class DirInfo:
             # Start from scratch.
             self._files_by_rel_str.clear()
             self._files_by_hash.clear()
+            self._files_by_name.clear()
         to_hash = 0
         # This set is populated by existing_hash(), which is only called if
         # resume is True, because it's only needed if resume is True but it
@@ -187,12 +192,14 @@ class DirInfo:
                 stats = self._files_by_rel_str.pop(filename)
                 if isinstance(stats, FileInfo):
                     self._files_by_hash[stats.size][stats.hash].remove(stats)
+                    self._files_by_name[stats.relpath.name].remove(stats)
     def _store_file(self, stats: file.FileStats) -> None:
         # We use a private attribute of FileStats here in order to save memory
         # by sharing the same string instance.
         self._files_by_rel_str[stats._rel_str] = stats
     def _store_hash(self, stats: FileInfo):
         self._files_by_hash[stats.size][stats.hash].add(stats)
+        self._files_by_name[stats.relpath.name].add(stats)
         return stats
     def _record_hash(self, path: pathlib.Path, hash: bytes, when: datetime = None):
         relative = os.fspath(path.relative_to(self.base))
@@ -219,6 +226,16 @@ class DirInfo:
         :raises: :obj:`KeyError` if file not known.
         """
         return self._files_by_rel_str[rel]
+    def get_by_name(self, name: str) -> Iterator[FileInfo]:
+        """
+        Iterator over all files with the specified name part (the last part of
+        the path, excluding directory).
+
+        If the file has not been hashed, then it is omitted.
+
+        :param rel: final part of file path.
+        """
+        yield from self._files_by_name[name]
     def dupe_groups(self) -> Iterator[FrozenSet[FileInfo]]:
         """
         Iterator. Each value yielded is a set of :obj:`FileInfo` objects,

@@ -286,11 +286,15 @@ def test_compare_counts(tmp_path, capsys):
     # create the files we want.
     def set_up(path, extra_files=()):
         path.mkdir()
+        path_bytes = str(path).encode('utf8')
         (path / 'equal1.txt').write_bytes(b'equal1')
         (path / 'equal2.txt').write_bytes(b'equal2')
-        (path / 'unequal.txt').write_bytes(str(path).encode('utf8'))
+        (path / 'unequal.txt').write_bytes(path_bytes)
         for extra in extra_files:
             (path / extra).write_bytes(b'extra')
+        (path / path.name).mkdir()
+        (path / path.name / 'moved.txt').write_bytes(b'moved')
+        (path / path.name / 'moved_and_changed.txt').write_bytes(path_bytes)
         info = DirInfo(path)
         info.populate()
         info.save()
@@ -305,7 +309,22 @@ def test_compare_counts(tmp_path, capsys):
     for row in out.splitlines():
         key, _, value = row.partition(':')
         results[key] = int(value)
-    assert results == {'old': 5, 'new': 4, 'identical': 2, 'changed': 1, 'vanished': 2, 'added': 1}
+    assert results == {
+        # 5 files each side, plus the extras specified to set_up()
+        'old': 7, 'new': 6,
+        # equal1.txt and equal2.txt each have the same contents both sides
+        'identical': 2,
+        # unequal.txt is present on both sides with different contents
+        'changed': 1,
+        # moved.txt has the same filename and contents, in different subdirs
+        'moved': 1,
+        # moved_and_changed.txt has the same filename but different contents,
+        # in different directories, so it doesn't count as moved.
+        # a, b, moved_and_changed.txt are only on the left
+        'vanished': 3,
+        # c, moved_and_changed.txt are only on the right
+        'added': 2,
+    }
 
 def test_compare_no_hash(tmp_path):
     """

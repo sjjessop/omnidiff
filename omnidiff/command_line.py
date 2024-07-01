@@ -134,10 +134,11 @@ def list_option(name: str):
 @click.argument('new_dirname')
 @list_option('identical')
 @list_option('changed')
+@list_option('moved')
 @list_option('vanished')
 @list_option('added')
 @list_option('all')
-def compare(old_dirname: str, new_dirname: str, list_identical: bool, list_changed: bool, list_vanished: bool, list_added: bool, list_all: bool) -> None:
+def compare(old_dirname: str, new_dirname: str, list_identical: bool, list_changed: bool, list_moved: bool, list_vanished: bool, list_added: bool, list_all: bool) -> None:
     """
     Summarise changes from OLD_DIRNAME to NEW_DIRNAME. Both directories must
     previously have been scanned (by the 'info' command or otherwise).
@@ -147,18 +148,24 @@ def compare(old_dirname: str, new_dirname: str, list_identical: bool, list_chang
     """
     identical = set()
     changed = set()
+    moved = set()
     vanished = set()
     old_dir = DirInfo.load(old_dirname)
     new_dir = DirInfo.load(new_dirname)
     for old_file in old_dir:
+        if not isinstance(old_file, FileInfo):
+            raise Exception(f'No hash for {old_file.fullpath}')
         rel_str = old_file._rel_str
         try:
             new_file = new_dir.get_relative(rel_str)
         except KeyError:
-            vanished.add(rel_str)
+            for new_file in new_dir.get_by_name(old_file.relpath.name):
+                if new_file.hash == old_file.hash:
+                    moved.add((rel_str, new_file._rel_str))
+                    break
+            else:
+                vanished.add(rel_str)
             continue
-        if not isinstance(old_file, FileInfo):
-            raise Exception(f'No hash for {old_file.fullpath}')
         if not isinstance(new_file, FileInfo):
             raise Exception(f'No hash for {new_file.fullpath}')
         if new_file.hash == old_file.hash:
@@ -168,11 +175,13 @@ def compare(old_dirname: str, new_dirname: str, list_identical: bool, list_chang
     added = (
         {file._rel_str for file in new_dir}
         .difference(file._rel_str for file in old_dir)
+        .difference(dst for src, dst in moved)
     )
     print('old:', old_dir.file_count)
     print('new:', new_dir.file_count)
     print('identical:', len(identical))
-    print('changed: ', len(changed))
+    print('changed:', len(changed))
+    print('moved:', len(moved))
     print('vanished:', len(vanished))
     print('added:', len(added))
     if list_identical or list_all:
@@ -181,6 +190,9 @@ def compare(old_dirname: str, new_dirname: str, list_identical: bool, list_chang
     if list_changed or list_all:
         print('\nchanged files:\n  ', end='')
         print('\n  '.join(sorted(changed)))
+    if list_moved or list_all:
+        print('\nmoved files:\n  ', end='')
+        print('\n  '.join(map(str, sorted(moved))))
     if list_vanished or list_all:
         print('\nvanished files:\n  ', end='')
         print('\n  '.join(sorted(vanished)))
